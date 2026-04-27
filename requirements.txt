@@ -1,0 +1,9 @@
+dagster>=1.7
+dagster-webserver>=1.7
+plotnine>=0.13
+geopandas>=0.14
+pandas>=2.0
+requests>=2.31
+matplotlib>=3.8
+shapely>=2.0
+pyarrow>=15.0
