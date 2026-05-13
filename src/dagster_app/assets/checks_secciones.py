@@ -20,9 +20,9 @@ def check_raw_renta_columnas(raw_renta_media):
 
 @asset_check(asset="raw_renta_media")
 def check_raw_renta_sin_nulos(raw_renta_media):
-    nulos = raw_renta_media.iloc[:, :4].isnull().sum().sum()
-    return AssetCheckResult(passed=nulos == 0,
-        metadata={"nulos_criticos": int(nulos)})
+    nulos = int(raw_renta_media.iloc[:, :4].isnull().sum().sum())
+    return AssetCheckResult(passed=bool(nulos == 0),
+        metadata={"nulos_criticos": nulos})
 
 
 @asset_check(asset="raw_distribucion_ingresos")
@@ -52,19 +52,16 @@ def check_raw_ocupacion_columnas(raw_ocupacion):
 
 @asset_check(asset="cleaned_renta_media")
 def check_cleaned_renta_anios(cleaned_renta_media):
-    """Los tres años 2021, 2022, 2023 deben estar presentes."""
-    anios = sorted(cleaned_renta_media["anio"].unique())
+    anios = sorted(cleaned_renta_media["anio"].unique().tolist())
     ok    = all(a in anios for a in [2021, 2022, 2023])
-    return AssetCheckResult(passed=ok,
+    return AssetCheckResult(passed=bool(ok),
         metadata={"anios_disponibles": str(anios)})
-
 
 @asset_check(asset="cleaned_renta_media")
 def check_cleaned_renta_positiva(cleaned_renta_media):
     negativos = int((cleaned_renta_media["renta_media"] < 0).sum())
-    return AssetCheckResult(passed=negativos == 0,
+    return AssetCheckResult(passed=bool(negativos == 0),
         metadata={"valores_negativos": negativos})
-
 
 @asset_check(asset="cleaned_distribucion_ingresos")
 def check_fuentes_categorias(cleaned_distribucion_ingresos):
@@ -86,9 +83,8 @@ def check_actividad_categorias(cleaned_actividad):
 
 @asset_check(asset="cleaned_ocupacion")
 def check_ocupacion_sectores(cleaned_ocupacion):
-    """Debe haber al menos 3 sectores distintos."""
     n = cleaned_ocupacion["sector"].nunique()
-    return AssetCheckResult(passed=n >= 3,
+    return AssetCheckResult(passed=bool(n >= 3),
         metadata={"num_sectores": n, "sectores": list(cleaned_ocupacion["sector"].unique())})
 
 
@@ -99,7 +95,7 @@ def check_ocupacion_sectores(cleaned_ocupacion):
 @asset_check(asset="viz_renta_tendencia")
 def check_viz_renta_tendencia(viz_renta_tendencia):
     df = viz_renta_tendencia
-    ok = len(df) >= 3 and df["media_provincial"].notna().all()
+    ok = bool(len(df) >= 3 and df["media_provincial"].notna().all())
     return AssetCheckResult(passed=ok, metadata={"filas": len(df)})
 
 
@@ -137,22 +133,22 @@ def check_viz_ocupacion_suma(viz_ocupacion_distribucion):
 
 @asset_check(asset="viz_geo_renta_2021")
 def check_geo_merge_2021(viz_geo_renta_2021):
-    pct = viz_geo_renta_2021["renta_media"].notna().mean() * 100
-    return AssetCheckResult(passed=pct >= 50,
-        metadata={"pct_secciones_con_renta": round(float(pct), 1)})
+    pct = float(viz_geo_renta_2021["renta_media"].notna().mean() * 100)
+    return AssetCheckResult(passed=bool(pct >= 50),
+        metadata={"pct_secciones_con_renta": round(pct, 1)})
 
 
 @asset_check(asset="viz_geo_renta_2022")
 def check_geo_merge_2022(viz_geo_renta_2022):
     pct = viz_geo_renta_2022["renta_media"].notna().mean() * 100
-    return AssetCheckResult(passed=pct >= 50,
+    return AssetCheckResult(passed=bool(pct >= 50),
         metadata={"pct_secciones_con_renta": round(float(pct), 1)})
 
 
 @asset_check(asset="viz_geo_renta_2023")
 def check_geo_merge_2023(viz_geo_renta_2023):
     pct = viz_geo_renta_2023["renta_media"].notna().mean() * 100
-    return AssetCheckResult(passed=pct >= 50,
+    return AssetCheckResult(passed=bool(pct >= 50),
         metadata={"pct_secciones_con_renta": round(float(pct), 1)})
 
 
