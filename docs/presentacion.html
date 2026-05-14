@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Renta, Ocupación y Actividad – S/C de Tenerife</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300..700&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ── Reset & Tokens ─────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0f1117;
+      --surface:   #161820;
+      --surface-2: #1d1f2b;
+      --border:    rgba(255,255,255,0.08);
+      --text:      #e8e9f0;
+      --muted:     #8b8fa8;
+      --accent:    #0077b6;
+      --accent-2:  #e63946;
+      --accent-3:  #457b9d;
+      --gold:      #f4a261;
+      --font-d:    'Instrument Serif', Georgia, serif;
+      --font-b:    'DM Sans', system-ui, sans-serif;
+      --r:         0.75rem;
+      --ease:      cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: var(--font-b);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 1rem;
+      line-height: 1.6;
+    }
+
+    /* ── Progress bar ───────────────────────────────────────── */
+    #progress-bar {
+      position: fixed; top: 0; left: 0; height: 3px;
+      background: linear-gradient(90deg, var(--accent), var(--gold));
+      width: 0%; z-index: 100;
+      transition: width 0.2s var(--ease);
+    }
+
+    /* ── Slides ─────────────────────────────────────────────── */
+    .slides-wrapper {
+      width: 100vw;
+      height: 100vh;
+      overflow-y: scroll;
+      scroll-snap-type: y mandatory;
+    }
+
+    .slide {
+      width: 100vw;
+      min-height: 100vh;
+      scroll-snap-align: start;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 4rem 2rem;
+      position: relative;
+      opacity: 0;
+      transform: translateY(24px);
+      transition: opacity 0.6s var(--ease), transform 0.6s var(--ease);
+    }
+
+    .slide.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .slide-inner {
+      max-width: 900px;
+      width: 100%;
+    }
+
+    /* ── Slide variants ─────────────────────────────────────── */
+    .slide-cover {
+      background: radial-gradient(ellipse at 30% 40%, rgba(0,119,182,0.18) 0%, transparent 65%),
+                  radial-gradient(ellipse at 70% 70%, rgba(230,57,70,0.1) 0%, transparent 55%),
+                  var(--bg);
+      text-align: center;
+    }
+
+    .slide-dark  { background: var(--bg); }
+    .slide-card  { background: var(--surface); }
+    .slide-blue  {
+      background: linear-gradient(135deg, rgba(0,119,182,0.15) 0%, var(--bg) 60%);
+    }
+    .slide-red   {
+      background: linear-gradient(135deg, rgba(230,57,70,0.12) 0%, var(--bg) 60%);
+    }
+    .slide-gold  {
+      background: linear-gradient(135deg, rgba(244,162,97,0.12) 0%, var(--bg) 60%);
+    }
+
+    /* ── Typography ─────────────────────────────────────────── */
+    .slide-num {
+      font-family: var(--font-b);
+      font-size: 0.75rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 1.5rem;
+    }
+
+    h1 {
+      font-family: var(--font-d);
+      font-size: clamp(2.2rem, 5vw, 4rem);
+      font-weight: 400;
+      line-height: 1.15;
+      margin-bottom: 1rem;
+      text-wrap: balance;
+    }
+
+    h2 {
+      font-family: var(--font-d);
+      font-size: clamp(1.6rem, 3vw, 2.6rem);
+      font-weight: 400;
+      line-height: 1.2;
+      margin-bottom: 1rem;
+      text-wrap: balance;
+    }
+
+    h3 {
+      font-family: var(--font-b);
+      font-size: 1rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 0.5rem;
+    }
+
+    .subtitle {
+      font-size: 1.2rem;
+      color: var(--muted);
+      font-style: italic;
+      margin-bottom: 2rem;
+    }
+
+    p { color: var(--muted); max-width: 65ch; margin-bottom: 0.75rem; }
+    p strong { color: var(--text); }
+    .lead { font-size: 1.15rem; color: var(--text); }
+
+    /* ── Accent line ────────────────────────────────────────── */
+    .accent-line {
+      width: 48px; height: 3px;
+      background: linear-gradient(90deg, var(--accent), var(--gold));
+      border-radius: 2px;
+      margin-bottom: 1.5rem;
+    }
+
+    /* ── Chips / tags ───────────────────────────────────────── */
+    .chip-row { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
+    .chip {
+      font-size: 0.78rem; font-weight: 500;
+      padding: 0.3rem 0.8rem;
+      border-radius: 99px;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      background: var(--surface-2);
+    }
+    .chip.blue  { border-color: rgba(0,119,182,0.5); color: #5bb8e8; background: rgba(0,119,182,0.1); }
+    .chip.red   { border-color: rgba(230,57,70,0.5); color: #f08080; background: rgba(230,57,70,0.1); }
+    .chip.gold  { border-color: rgba(244,162,97,0.5); color: var(--gold); background: rgba(244,162,97,0.1); }
+    .chip.green { border-color: rgba(100,200,100,0.5); color: #88c988; background: rgba(100,200,100,0.1); }
+
+    /* ── Cards grid ─────────────────────────────────────────── */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(min(260px,100%), 1fr));
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+
+    .card {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 1.4rem 1.2rem;
+    }
+
+    .card-icon {
+      font-size: 1.5rem;
+      margin-bottom: 0.6rem;
+    }
+
+    .card h4 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 0.35rem;
+    }
+
+    .card p { font-size: 0.85rem; margin: 0; }
+
+    /* ── Pipeline diagram ───────────────────────────────────── */
+    .pipeline {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0;
+      margin-top: 1.5rem;
+    }
+
+    .pipe-step {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 0.7rem 1rem;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text);
+      text-align: center;
+      min-width: 100px;
+    }
+
+    .pipe-step span {
+      display: block;
+      font-size: 0.7rem;
+      font-weight: 400;
+      color: var(--muted);
+      margin-top: 0.2rem;
+    }
+
+    .pipe-arrow {
+      color: var(--muted);
+      font-size: 1.1rem;
+      padding: 0 0.4rem;
+    }
+
+    .pipe-step.active { border-color: var(--accent); color: #5bb8e8; }
+
+    /* ── Checks table ───────────────────────────────────────── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1.2rem;
+      font-size: 0.88rem;
+    }
+
+    th {
+      text-align: left;
+      padding: 0.6rem 0.8rem;
+      border-bottom: 1px solid var(--border);
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    td {
+      padding: 0.6rem 0.8rem;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      color: var(--muted);
+    }
+
+    td:first-child { color: var(--text); font-family: var(--font-b); font-weight: 500; }
+
+    .badge {
+      display: inline-block;
+      background: rgba(0,119,182,0.15);
+      color: #5bb8e8;
+      border-radius: 4px;
+      padding: 0.1rem 0.45rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+
+    /* ── Code block ─────────────────────────────────────────── */
+    .code-block {
+      background: #0d0f14;
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 1.2rem 1.4rem;
+      margin-top: 1rem;
+      font-size: 0.8rem;
+      line-height: 1.7;
+      overflow-x: auto;
+    }
+
+    .code-block code {
+      font-family: 'Cascadia Code', 'Fira Code', 'Courier New', monospace;
+      color: #a8b4c8;
+    }
+
+    .kw   { color: #569cd6; }
+    .fn   { color: #dcdcaa; }
+    .st   { color: #ce9178; }
+    .cm   { color: #6a9955; }
+    .num  { color: #b5cea8; }
+    .dec  { color: #c586c0; }
+
+    /* ── Grammar table ──────────────────────────────────────── */
+    .grammar-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(min(180px,100%), 1fr));
+      gap: 0.75rem;
+      margin-top: 1.2rem;
+    }
+
+    .grammar-cell {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 1rem;
+    }
+
+    .grammar-cell .label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      margin-bottom: 0.4rem;
+    }
+
+    .grammar-cell .value {
+      font-size: 0.85rem;
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    /* ── Gestalt list ───────────────────────────────────────── */
+    .gestalt-list {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+      margin-top: 1.2rem;
+    }
+
+    .gestalt-item {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 1rem;
+    }
+
+    .gestalt-item .g-title {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 0.3rem;
+    }
+
+    .gestalt-item p { font-size: 0.8rem; }
+
+    /* ── Quote ──────────────────────────────────────────────── */
+    .big-quote {
+      font-family: var(--font-d);
+      font-size: clamp(1.3rem, 2.5vw, 2rem);
+      font-style: italic;
+      line-height: 1.5;
+      color: var(--text);
+      border-left: 3px solid var(--accent);
+      padding-left: 1.5rem;
+      margin: 1.5rem 0;
+    }
+
+    /* ── Stat row ───────────────────────────────────────────── */
+    .stat-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(min(140px,100%), 1fr));
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+
+    .stat-box {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 1.2rem;
+      text-align: center;
+    }
+
+    .stat-num {
+      font-family: var(--font-d);
+      font-size: 2.2rem;
+      color: var(--text);
+      line-height: 1;
+    }
+
+    .stat-label {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 0.3rem;
+    }
+
+    /* ── IA flow ────────────────────────────────────────────── */
+    .ia-flow {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr auto 1fr;
+      align-items: center;
+      gap: 0.5rem;
+      margin-top: 1.5rem;
+    }
+
+    .ia-box {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 1rem;
+      text-align: center;
+      font-size: 0.83rem;
+    }
+
+    .ia-box.ok   { border-color: rgba(100,200,100,0.4); color: #88c988; }
+    .ia-box.fail { border-color: rgba(230,57,70,0.4);  color: #f08080; }
+    .ia-box.mid  { border-color: rgba(244,162,97,0.4); color: var(--gold); }
+
+    .ia-arrow { color: var(--muted); font-size: 1.3rem; text-align: center; }
+
+    /* ── Viz grid ───────────────────────────────────────────── */
+    .viz-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.75rem;
+      margin-top: 1.2rem;
+    }
+
+    .viz-card {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 1rem;
+      font-size: 0.82rem;
+    }
+
+    .viz-card .v-type {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+      margin-bottom: 0.35rem;
+    }
+
+    .viz-card .v-name { color: var(--text); font-weight: 600; margin-bottom: 0.25rem; }
+    .viz-card .v-data { color: var(--muted); }
+
+    /* ── Conclusion bullets ─────────────────────────────────── */
+    .conc-list {
+      list-style: none;
+      margin-top: 1.2rem;
+    }
+
+    .conc-list li {
+      padding: 0.8rem 1rem 0.8rem 2.8rem;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      margin-bottom: 0.6rem;
+      color: var(--muted);
+      font-size: 0.92rem;
+      position: relative;
+    }
+
+    .conc-list li::before {
+      position: absolute;
+      left: 0.9rem;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 1rem;
+    }
+
+    /* ── Nav dots ───────────────────────────────────────────── */
+    #nav-dots {
+      position: fixed;
+      right: 1.2rem;
+      top: 50%;
+      transform: translateY(-50%);
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+      z-index: 50;
+    }
+
+    .dot {
+      width: 7px; height: 7px;
+      border-radius: 99px;
+      background: var(--border);
+      cursor: pointer;
+      transition: all 0.3s var(--ease);
+      border: 1px solid rgba(255,255,255,0.15);
+    }
+
+    .dot.active {
+      background: var(--accent);
+      height: 20px;
+      border-color: var(--accent);
+    }
+
+    /* ── Footer meta ────────────────────────────────────────── */
+    .slide-meta {
+      position: absolute;
+      bottom: 1.5rem;
+      right: 2rem;
+      font-size: 0.7rem;
+      color: var(--muted);
+      opacity: 0.5;
+    }
+
+    /* ── Responsive ─────────────────────────────────────────── */
+    @media (max-width: 640px) {
+      .gestalt-list { grid-template-columns: 1fr; }
+      .ia-flow { grid-template-columns: 1fr; }
+      .ia-arrow { transform: rotate(90deg); }
+      .viz-grid { grid-template-columns: 1fr 1fr; }
+      #nav-dots { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="progress-bar"></div>
+
+<!-- NAV DOTS -->
+<nav id="nav-dots" aria-label="Navegación por diapositivas"></nav>
+
+<!-- ══════════════════════════════════════════════════════════
+     SLIDES
+     ══════════════════════════════════════════════════════════ -->
+<div class="slides-wrapper" id="slides-wrapper">
+
+  <!-- ── 1. COVER ─────────────────────────────────────────── -->
+  <section class="slide slide-cover" id="slide-1">
+    <div class="slide-inner" style="text-align:center">
+      <p class="slide-num">Proyecto Final de Visualización · ULL · 2025–2026</p>
+      <h1>Renta, Ocupación y Actividad<br>en las Secciones Censales de<br>Santa Cruz de Tenerife</h1>
+      <p class="subtitle">Una historia basada en datos · 2021–2023</p>
+      <div style="display:flex;gap:0.5rem;justify-content:center;flex-wrap:wrap;margin-top:1.5rem">
+        <span class="chip blue">DataOps · Dagster</span>
+        <span class="chip gold">Gramática de Gráficos · Plotnine</span>
+        <span class="chip green">IA Generativa · llama3.1:8b</span>
+        <span class="chip red">ISTAC + INE</span>
+      </div>
+      <p style="margin-top:2rem;font-size:0.82rem;color:var(--muted)">Laura Lasso García · Mayo 2026</p>
+    </div>
+    <div class="slide-meta">1 / 12</div>
+  </section>
+
+  <!-- ── 2. PREGUNTA ──────────────────────────────────────── -->
+  <section class="slide slide-dark" id="slide-2">
+    <div class="slide-inner">
+      <p class="slide-num">02 · La pregunta</p>
+      <div class="accent-line"></div>
+      <h2>¿Cómo se distribuye la renta y qué relación tiene con el empleo?</h2>
+      <div class="big-quote">
+        "Las secciones censales con mayor renta media presentan patrones de ocupación
+        más diversificados y tasas de actividad más altas."
+      </div>
+      <p>El objetivo es identificar territorios vulnerables donde las políticas de
+         empleo deberían focalizarse, cruzando datos de renta, ocupación y actividad
+         laboral a nivel de sección censal.</p>
+    </div>
+    <div class="slide-meta">2 / 12</div>
+  </section>
+
+  <!-- ── 3. FUENTES ───────────────────────────────────────── -->
+  <section class="slide slide-card" id="slide-3">
+    <div class="slide-inner">
+      <p class="slide-num">03 · Fuentes de datos</p>
+      <div class="accent-line"></div>
+      <h2>Cuatro datasets oficiales</h2>
+      <div class="cards">
+        <div class="card">
+          <div class="card-icon">📊</div>
+          <h4>Renta media y mediana</h4>
+          <p>ISTAC E30325A_000009 · Renta bruta media por sección censal · 2021–2023</p>
+          <div class="chip-row"><span class="chip blue">ISTAC</span></div>
+        </div>
+        <div class="card">
+          <div class="card-icon">💰</div>
+          <h4>Fuentes de renta</h4>
+          <p>ISTAC E30325A_000002 · Salarios, pensiones, prestaciones por sección · 2021–2023</p>
+          <div class="chip-row"><span class="chip blue">ISTAC</span></div>
+        </div>
+        <div class="card">
+          <div class="card-icon">🏭</div>
+          <h4>Sector de ocupación</h4>
+          <p>INE Tabla 70125 · Censo anual de ocupación y actividad · 2021–2023</p>
+          <div class="chip-row"><span class="chip red">INE</span></div>
+        </div>
+        <div class="card">
+          <div class="card-icon">👥</div>
+          <h4>Relación con actividad</h4>
+          <p>INE Tabla 66796 · Ocupado / Parado / Inactivo · 2021–2023</p>
+          <div class="chip-row"><span class="chip red">INE</span></div>
+        </div>
+      </div>
+      <p style="margin-top:1rem;font-size:0.82rem">
+        + 3 capas cartográficas GeoJSON (secciones 2022, 2023, 2024) con
+        correspondencia datos<sub>t</sub> → mapa<sub>t+1</sub>
+      </p>
+    </div>
+    <div class="slide-meta">3 / 12</div>
+  </section>
+
+  <!-- ── 4. DATAOPS PIPELINE ──────────────────────────────── -->
+  <section class="slide slide-blue" id="slide-4">
+    <div class="slide-inner">
+      <p class="slide-num">04 · Arquitectura DataOps</p>
+      <div class="accent-line"></div>
+      <h2>Pipeline orquestado con Dagster</h2>
+      <div class="pipeline">
+        <div class="pipe-step">raw<span>Carga CSV + GeoJSON</span></div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-step">cleaned<span>Normaliz. + join</span></div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-step">viz_data<span>Agregaciones</span></div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-step active">ia_code<span>LLM + fallback</span></div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-step">visuals<span>PNG</span></div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-step">gh-pages<span>Publicación</span></div>
+      </div>
+      <div class="cards" style="margin-top:1.2rem">
+        <div class="card">
+          <h4>🔁 Reproducibilidad</h4>
+          <p>Assets Dagster con dependencias declarativas. Relanzable desde cero.</p>
+        </div>
+        <div class="card">
+          <h4>🔍 Trazabilidad</h4>
+          <p>Cada asset registra metadatos: filas, columnas, años, tamaño PNG.</p>
+        </div>
+        <div class="card">
+          <h4>✅ Calidad continua</h4>
+          <p>26 checks automáticos verifican invariantes en cada etapa.</p>
+        </div>
+        <div class="card">
+          <h4>🚀 Entrega continua</h4>
+          <p>git commit + push automático a GitHub Pages al finalizar.</p>
+        </div>
+      </div>
+    </div>
+    <div class="slide-meta">4 / 12</div>
+  </section>
+
+  <!-- ── 5. CHECKS ────────────────────────────────────────── -->
+  <section class="slide slide-dark" id="slide-5">
+    <div class="slide-inner">
+      <p class="slide-num">05 · Checks de calidad</p>
+      <div class="accent-line"></div>
+      <h2>26 <code style="font-size:1.2rem;color:var(--accent)">@asset_check</code> distribuidos</h2>
+      <table>
+        <thead>
+          <tr><th>Grupo</th><th>Checks</th><th>Qué verifican</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>raw</td><td><span class="badge">6</span></td><td>Mínimo de columnas y filas; nulos críticos</td></tr>
+          <tr><td>cleaned</td><td><span class="badge">6</span></td><td>Años 2021–2023 presentes; valores positivos; categorías</td></tr>
+          <tr><td>viz_data</td><td><span class="badge">8</span></td><td>Porcentajes suman ≈ 100 %; join geográfico ≥ 50 %</td></tr>
+          <tr><td>ia_code</td><td><span class="badge">4</span></td><td>Código contiene def generarplot, ggplot, return, geometría</td></tr>
+          <tr><td>visualizaciones</td><td><span class="badge">8</span></td><td>PNG existe en disco y tiene tamaño > 10 KB</td></tr>
+        </tbody>
+      </table>
+      <div class="code-block" style="margin-top:1rem">
+        <code><span class="dec">@asset_check</span>(asset=<span class="st">"viz_geo_renta_2021"</span>)
+<span class="kw">def</span> <span class="fn">check_geo_merge_2021</span>(viz_geo_renta_2021):
+    pct = <span class="fn">float</span>(viz_geo_renta_2021[<span class="st">"renta_media"</span>].<span class="fn">notna</span>().<span class="fn">mean</span>() * <span class="num">100</span>)
+    <span class="kw">return</span> AssetCheckResult(passed=<span class="fn">bool</span>(pct >= <span class="num">50</span>),
+        metadata={<span class="st">"pct_secciones_con_renta"</span>: <span class="fn">round</span>(pct, <span class="num">1</span>)})</code>
+      </div>
+    </div>
+    <div class="slide-meta">5 / 12</div>
+  </section>
+
+  <!-- ── 6. GRAMÁTICA DE GRÁFICOS ─────────────────────────── -->
+  <section class="slide slide-gold" id="slide-6">
+    <div class="slide-inner">
+      <p class="slide-num">06 · Gramática de Gráficos</p>
+      <div class="accent-line"></div>
+      <h2>Toda visualización como capas componibles</h2>
+      <p class="lead">Wilkinson (2005) · implementado en <strong>Plotnine</strong></p>
+      <div class="grammar-grid">
+        <div class="grammar-cell">
+          <div class="label">Datos</div>
+          <div class="value">viz_renta_tendencia<br>viz_distrib_ingresos<br>viz_actividad<br>viz_ocupacion</div>
+        </div>
+        <div class="grammar-cell">
+          <div class="label">Estéticas (aes)</div>
+          <div class="value">x = año / fuente / sector<br>y = media / porcentaje<br>fill = categoría<br>ribbon = ± desv_std</div>
+        </div>
+        <div class="grammar-cell">
+          <div class="label">Geometrías</div>
+          <div class="value">geom_line + geom_ribbon<br>geom_bar(dodge)<br>geom_bar(stacked)<br>geom_sf (coropleta)</div>
+        </div>
+        <div class="grammar-cell">
+          <div class="label">Escalas</div>
+          <div class="value">scale_fill_brewer Set2<br>scale_y_continuous €/%<br>scale_x_continuous breaks<br>cmap YlOrRd (mapas)</div>
+        </div>
+        <div class="grammar-cell">
+          <div class="label">Facetas</div>
+          <div class="value">facet_wrap(~anio)<br>escala común = comparación válida<br>pequeños múltiplos (Tufte)</div>
+        </div>
+        <div class="grammar-cell">
+          <div class="label">Tema</div>
+          <div class="value">theme_minimal()<br>figure_size en theme()<br>axis_text_x angle=45°<br>caption con fuente</div>
+        </div>
+      </div>
+    </div>
+    <div class="slide-meta">6 / 12</div>
+  </section>
+
+  <!-- ── 7. PRINCIPIOS DE DISEÑO ──────────────────────────── -->
+  <section class="slide slide-card" id="slide-7">
+    <div class="slide-inner">
+      <p class="slide-num">07 · Principios de diseño</p>
+      <div class="accent-line"></div>
+      <h2>Gestalt + Tufte</h2>
+      <div class="gestalt-list">
+        <div class="gestalt-item">
+          <div class="g-title">📍 Proximidad</div>
+          <p>Barras del mismo año agrupadas con position="dodge"</p>
+        </div>
+        <div class="gestalt-item">
+          <div class="g-title">🎨 Similitud</div>
+          <p>Misma paleta Set2 en todos los gráficos → categorías iguales parecen relacionadas</p>
+        </div>
+        <div class="gestalt-item">
+          <div class="g-title">➡️ Continuidad</div>
+          <p>Línea de tendencia guía la vista de 2021 a 2023</p>
+        </div>
+        <div class="gestalt-item">
+          <div class="g-title">🔵 Figura-Fondo</div>
+          <p>Ribbon α=0.2 como fondo; línea central como figura principal</p>
+        </div>
+        <div class="gestalt-item">
+          <div class="g-title">🎯 Punto focal</div>
+          <p>"Ocupado" en #0077b6 intenso; resto en tonos suaves</p>
+        </div>
+        <div class="gestalt-item">
+          <div class="g-title">📉 Data-ink ratio</div>
+          <p>theme_minimal() elimina el fondo gris (chartjunk de Tufte)</p>
+        </div>
+      </div>
+    </div>
+    <div class="slide-meta">7 / 12</div>
+  </section>
+
+  <!-- ── 8. IA GENERATIVA ─────────────────────────────────── -->
+  <section class="slide slide-blue" id="slide-8">
+    <div class="slide-inner">
+      <p class="slide-num">08 · Inteligencia Artificial Generativa</p>
+      <div class="accent-line"></div>
+      <h2>Patrón IA + fallback</h2>
+      <p>Modelo <strong>llama3.1:8b</strong> vía Ollama + LiteLLM en <code>gpu1.esit.ull.es</code></p>
+      <div class="ia-flow">
+        <div class="ia-box mid">
+          <strong>template_ia_*</strong><br>
+          <span style="font-size:0.75rem;color:var(--muted)">Prompt con gramática de gráficos + Gestalt</span>
+        </div>
+        <div class="ia-arrow">→</div>
+        <div class="ia-box mid">
+          <strong>codigo_generado_*</strong><br>
+          <span style="font-size:0.75rem;color:var(--muted)">LLM genera def generarplot(df)</span>
+        </div>
+        <div class="ia-arrow">→</div>
+        <div class="ia-box ok">
+          <strong>✅ Éxito</strong><br>
+          <span style="font-size:0.75rem">Gráfico IA</span>
+        </div>
+      </div>
+      <div style="text-align:center;margin:0.6rem 0;color:var(--muted);font-size:0.85rem">↓ si falla la ejecución</div>
+      <div style="display:flex;justify-content:center">
+        <div class="ia-box fail" style="width:200px">
+          <strong>⚠️ Fallback Python</strong><br>
+          <span style="font-size:0.75rem">Código hardcodeado garantizado</span>
+        </div>
+      </div>
+      <div class="chip-row" style="margin-top:1.2rem">
+        <span class="chip gold">Resiliencia: siempre se produce PNG</span>
+        <span class="chip blue">Prompts incluyen: aes, geom, scale, Gestalt</span>
+      </div>
+    </div>
+    <div class="slide-meta">8 / 12</div>
+  </section>
+
+  <!-- ── 9. PROMPTS ───────────────────────────────────────── -->
+  <section class="slide slide-dark" id="slide-9">
+    <div class="slide-inner">
+      <p class="slide-num">09 · Ejemplo de prompt</p>
+      <div class="accent-line"></div>
+      <h2>Tendencia de renta · evaluado con conceptos de la asignatura</h2>
+      <div class="code-block">
+        <code><span class="cm"># Prompt para grafico_tendencia_renta</span>
+descripcion = <span class="st">"""
+- Dataset: viz_renta_tendencia · columnas: anio, media_provincial, desv_std
+- Esteticas (aes): anio → X, media_provincial → Y
+- Geometrias:
+    geom_ribbon(aes(ymin=media-desv, ymax=media+desv), alpha=0.2)  <span class="cm"># Figura-Fondo</span>
+    geom_line(color="#0077b6", size=1.2)                            <span class="cm"># Continuidad</span>
+    geom_point(color="#0077b6", size=3)
+- Escalas: scale_y_continuous etiquetas en €
+           scale_x_continuous breaks=[2021, 2022, 2023]
+- Tema: theme_minimal() + theme(figure_size=(12,6))                 <span class="cm"># data-ink ratio</span>
+- Gestalt: Continuidad (linea), Figura-Fondo (ribbon)
+- NO usar matplotlib
+"""</span></code>
+      </div>
+    </div>
+    <div class="slide-meta">9 / 12</div>
+  </section>
+
+  <!-- ── 10. VISUALIZACIONES ──────────────────────────────── -->
+  <section class="slide slide-card" id="slide-10">
+    <div class="slide-inner">
+      <p class="slide-num">10 · Resultados</p>
+      <div class="accent-line"></div>
+      <h2>8 visualizaciones generadas</h2>
+      <div class="viz-grid">
+        <div class="viz-card">
+          <div class="v-type">Línea + ribbon</div>
+          <div class="v-name">Tendencia renta</div>
+          <div class="v-data">Media provincial 2021–2023</div>
+        </div>
+        <div class="viz-card">
+          <div class="v-type">Barras + facetas</div>
+          <div class="v-name">Fuentes de renta</div>
+          <div class="v-data">Salarios, pensiones, prestaciones</div>
+        </div>
+        <div class="viz-card">
+          <div class="v-type">Barras + facetas</div>
+          <div class="v-name">Actividad laboral</div>
+          <div class="v-data">Ocupado / Parado / Inactivo</div>
+        </div>
+        <div class="viz-card">
+          <div class="v-type">Barras + facetas</div>
+          <div class="v-name">Sector ocupación</div>
+          <div class="v-data">Por sector económico</div>
+        </div>
+        <div class="viz-card">
+          <div class="v-type">Coropleta × 3</div>
+          <div class="v-name">Mapa renta</div>
+          <div class="v-data">2021, 2022, 2023 · cmap YlOrRd</div>
+        </div>
+        <div class="viz-card">
+          <div class="v-type">Coropleta</div>
+          <div class="v-name">Mapa ocupación</div>
+          <div class="v-data">Sector predominante 2023</div>
+        </div>
+      </div>
+      <p style="margin-top:1rem;font-size:0.83rem">
+        🌐 <a href="https://lauralasso.github.io/dagster-proyecto-final/" target="_blank" rel="noopener" style="color:var(--accent)">lauralasso.github.io/dagster-proyecto-final</a>
+      </p>
+    </div>
+    <div class="slide-meta">10 / 12</div>
+  </section>
+
+  <!-- ── 11. CONCLUSIONES ─────────────────────────────────── -->
+  <section class="slide slide-red" id="slide-11">
+    <div class="slide-inner">
+      <p class="slide-num">11 · Conclusiones</p>
+      <div class="accent-line"></div>
+      <h2>Hallazgos sobre la desigualdad en S/C de Tenerife</h2>
+      <ul class="conc-list">
+        <li>📈 Renta media provincial con tendencia ascendente 2021–2023, pero con alta variabilidad entre secciones</li>
+        <li>💼 Salarios y sueldos son la principal fuente de renta; diferencias significativas en el peso de pensiones y prestaciones entre barrios</li>
+        <li>🔗 Secciones con mayor proporción de ocupados presentan rentas más altas → relación empleo-bienestar confirmada</li>
+        <li>🗺️ Los mapas coropletas revelan concentración geográfica clara de la renta alta en zonas concretas del municipio</li>
+      </ul>
+      <div class="stat-row" style="margin-top:1.2rem">
+        <div class="stat-box"><div class="stat-num">4</div><div class="stat-label">fuentes de datos</div></div>
+        <div class="stat-box"><div class="stat-num">26</div><div class="stat-label">checks de calidad</div></div>
+        <div class="stat-box"><div class="stat-num">8</div><div class="stat-label">visualizaciones</div></div>
+        <div class="stat-box"><div class="stat-num">3</div><div class="stat-label">años analizados</div></div>
+      </div>
+    </div>
+    <div class="slide-meta">11 / 12</div>
+  </section>
+
+  <!-- ── 12. CIERRE ────────────────────────────────────────── -->
+  <section class="slide slide-cover" id="slide-12">
+    <div class="slide-inner" style="text-align:center">
+      <p class="slide-num">12 · Fin</p>
+      <h2 style="font-size:clamp(1.4rem,3vw,2.4rem)">Gracias</h2>
+      <p class="subtitle">Renta, Ocupación y Actividad · S/C de Tenerife 2021–2023</p>
+      <div style="display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;margin-top:2rem">
+        <a href="https://lauralasso.github.io/dagster-proyecto-final/" target="_blank" rel="noopener"
+           style="padding:0.7rem 1.4rem;background:var(--accent);color:#fff;border-radius:var(--r);text-decoration:none;font-weight:600;font-size:0.88rem">
+          Ver resultados →
+        </a>
+        <a href="https://github.com/LauraLasso/dagster-proyecto-final" target="_blank" rel="noopener"
+           style="padding:0.7rem 1.4rem;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:var(--r);text-decoration:none;font-weight:600;font-size:0.88rem">
+          GitHub →
+        </a>
+      </div>
+      <p style="margin-top:2.5rem;font-size:0.78rem;color:var(--muted)">
+        Laura Lasso García · Máster Ciberseguridad e Inteligencia de Datos · ULL · Mayo 2026
+      </p>
+    </div>
+    <div class="slide-meta">12 / 12</div>
+  </section>
+
+</div><!-- /slides-wrapper -->
+
+<!-- ══════════════════════════════════════════════════════════
+     JAVASCRIPT
+     ══════════════════════════════════════════════════════════ -->
+<script>
+(function () {
+  const wrapper   = document.getElementById('slides-wrapper');
+  const slides    = Array.from(document.querySelectorAll('.slide'));
+  const navDots   = document.getElementById('nav-dots');
+  const progressBar = document.getElementById('progress-bar');
+  const total     = slides.length;
+
+  // Build nav dots
+  slides.forEach((_, i) => {
+    const d = document.createElement('button');
+    d.className = 'dot';
+    d.setAttribute('aria-label', `Diapositiva ${i + 1}`);
+    d.addEventListener('click', () => slides[i].scrollIntoView({ behavior: 'smooth' }));
+    navDots.appendChild(d);
+  });
+
+  const dots = Array.from(navDots.querySelectorAll('.dot'));
+
+  // Intersection observer for entrance animations
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) entry.target.classList.add('visible');
+    });
+  }, { threshold: 0.3 });
+
+  slides.forEach(s => io.observe(s));
+
+  // Active dot + progress bar on scroll
+  const scrollIO = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const idx = slides.indexOf(entry.target);
+        dots.forEach((d, i) => d.classList.toggle('active', i === idx));
+        progressBar.style.width = ((idx + 1) / total * 100) + '%';
+      }
+    });
+  }, { threshold: 0.5 });
+
+  slides.forEach(s => scrollIO.observe(s));
+
+  // Keyboard navigation
+  document.addEventListener('keydown', (e) => {
+    const current = slides.findIndex(s => {
+      const r = s.getBoundingClientRect();
+      return r.top >= -window.innerHeight / 2 && r.top < window.innerHeight / 2;
+    });
+    if (e.key === 'ArrowDown' && current < total - 1)
+      slides[current + 1].scrollIntoView({ behavior: 'smooth' });
+    if (e.key === 'ArrowUp' && current > 0)
+      slides[current - 1].scrollIntoView({ behavior: 'smooth' });
+  });
+})();
+</script>
+</body>
+</html>
