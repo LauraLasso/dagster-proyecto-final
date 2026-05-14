@@ -162,6 +162,18 @@ def raw_geojson_2024():
     return Output(gdf, metadata={"features": len(gdf)})
 
 
+@asset(group_name="raw")
+def raw_relacion_actividad():
+    """
+    Reutiliza actividad-sc-3.csv como proxy de relación con la actividad.
+    (El CSV de INE 66796 no está disponible localmente.)
+    """
+    df = _leer_csv(DATA_DIR / "actividad-sc-3.csv")
+    get_dagster_logger().info("raw_relacion_actividad: usando actividad-sc-3.csv como fuente")
+    return Output(df, metadata={"rows": len(df), "columns": list(df.columns),
+                                 "fichero": "actividad-sc-3.csv"})
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. CLEANED
 # ─────────────────────────────────────────────────────────────────────────────
@@ -265,6 +277,12 @@ def cleaned_actividad(raw_actividad):
         col_personas:  "personas",
     })
 
+    # Dentro de cleaned_actividad, después del rename:
+    df["seccion"] = df["seccion"].astype(str).apply(
+        lambda g: f"{g.split('_')[1]}{g.split('_')[2][1:]}{g.split('_')[3][1:]}"
+        if "_" in str(g) else g
+    )
+
     df["anio"]     = _to_numeric(df["anio"]).astype("Int64")
     df["personas"] = _to_numeric(df["personas"])
     df = df.dropna(subset=["seccion", "relacion_actividad", "personas"])
@@ -287,36 +305,80 @@ def cleaned_actividad(raw_actividad):
 def cleaned_ocupacion(raw_ocupacion):
     df = raw_ocupacion.copy()
     logger = get_dagster_logger()
-    logger.info(f"cleaned_ocupacion columnas: {list(df.columns)}")
 
+    # _leer_csv normaliza 'año' → 'ano'. Hay que renombrar 'ano' → 'anio'
+    df = df.rename(columns={"ano": "anio"})
+    # También cubrir si vino como 'año' sin normalizar
     df.columns = df.columns.str.replace(r"a[ñn]o", "anio", regex=True)
 
-    col_sector   = _primera_col_que_contiene(df, "ocupacion", "sector", "rama", "actividad")
+    col_sector   = _primera_col_que_contiene(df, "ocupacion", "sector", "rama")
     col_geocode  = _primera_col_que_contiene(df, "geocode", "territorio_code", "cusec")
     col_personas = _primera_col_que_contiene(df, "num_casos", "personas", "total", "valor")
 
-    # Eliminar columna 'seccion' original (código corto) para evitar duplicado
-    if "seccion" in df.columns and col_geocode != "seccion":
-        df = df.drop(columns=["seccion"])
-
     df = df.rename(columns={
         col_sector:   "sector",
-        col_geocode:  "seccion",
+        col_geocode:  "geocode_raw",
         col_personas: "personas",
     })
+
+    df["seccion"] = df["geocode_raw"].astype(str).str.split("_", n=1).str[1]
 
     df["anio"]     = _to_numeric(df["anio"]).astype("Int64")
     df["personas"] = _to_numeric(df["personas"])
     df = df.dropna(subset=["seccion", "sector", "personas"])
-
-    df = (
-        df.groupby(["seccion", "anio", "sector"], as_index=False)["personas"]
-        .sum()
-    )
+    df = df.groupby(["seccion", "anio", "sector"], as_index=False)["personas"].sum()
     df["anio"] = df["anio"].astype(int)
 
-    return Output(df, metadata={"rows_cleaned": len(df), "sectores": list(df["sector"].unique())})
+    logger.info(f"  → {len(df)} filas, anios: {sorted(df['anio'].unique())}, seccion ejemplo: '{df['seccion'].iloc[0]}'")
+    return Output(df, metadata={
+        "rows_cleaned": len(df),
+        "sectores": list(df["sector"].unique()),
+        "seccion_ejemplo": df["seccion"].iloc[0]
+    })
 
+
+@asset(group_name="cleaned")
+def cleaned_relacion_actividad(raw_relacion_actividad):
+    df = raw_relacion_actividad.copy()
+    logger = get_dagster_logger()
+
+    # Normalizar 'año/Periodo' → 'anio'
+    df.columns = df.columns.str.replace(r"a[ñn]o", "anio", regex=True)
+    # df.columns = df.columns.str.replace(r"periodo", "anio", regex=True)
+
+    # Al inicio de cleaned_relacion_actividad, antes de _primera_col_que_contiene:
+    df = df.rename(columns={"ano": "anio", "periodo": "anio"})
+
+    col_cat      = _primera_col_que_contiene(df, "actividad", "relacion", "situacion")
+    col_geocode  = _primera_col_que_contiene(df, "geocode", "territorio_code", "cusec")
+    col_personas = _primera_col_que_contiene(df, "num_casos", "personas", "total", "valor")
+    col_anio     = _primera_col_que_contiene(df, "anio", "ano", "year", "periodo")
+
+    df = df.rename(columns={
+        col_cat:      "relacion_actividad",
+        col_geocode:  "geocode_raw",
+        col_personas: "personas",
+        col_anio:     "anio",
+    })
+
+    # Extraer CUSEC del geocode: "20210101_38001_D01_S001" → "3800101001"
+    def _extraer_cusec(g: str) -> str:
+        try:
+            p = str(g).split("_")
+            return f"{p[1]}{p[2][1:]}{p[3][1:]}"
+        except Exception:
+            return g
+
+    df["seccion"]  = df["geocode_raw"].astype(str).apply(_extraer_cusec)
+    df["anio"]     = _to_numeric(df["anio"]).astype("Int64")
+    df["personas"] = _to_numeric(df["personas"])
+    df = df.dropna(subset=["seccion", "relacion_actividad", "personas"])
+    df = df.groupby(["seccion", "anio", "relacion_actividad"], as_index=False)["personas"].sum()
+    df["anio"] = df["anio"].astype(int)
+
+    logger.info(f"  → {len(df)} filas, categorías: {list(df['relacion_actividad'].unique())}")
+    return Output(df, metadata={"rows": len(df),
+                                 "categorias": list(df["relacion_actividad"].unique())})
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 3. VIZ_DATA
@@ -374,6 +436,7 @@ def viz_ocupacion_distribucion(cleaned_ocupacion):
     return Output(df, metadata={"sectores": list(df["sector"].unique())})
 
 
+
 def _col_cusec(gdf) -> str:
     """Detecta el nombre real de la columna con el código de sección censal."""
     for candidato in ("CUSEC", "cusec", "NATCODE", "natcode", "COD_SEC", "geocode"):
@@ -407,6 +470,51 @@ def viz_geo_renta_2023(cleaned_renta_media, raw_geojson_2024):
     col = _col_cusec(raw_geojson_2024)
     gdf = raw_geojson_2024.merge(df, left_on=col, right_on="seccion", how="left")
     return Output(gdf, metadata={"col_join": col, "features_con_renta": int(gdf["renta_media"].notna().sum())})
+
+@asset(group_name="viz_data")
+def viz_geo_ocupacion_2023(cleaned_ocupacion, raw_geojson_2024):
+    logger = get_dagster_logger()
+
+    df = cleaned_ocupacion[cleaned_ocupacion["anio"] == 2023].copy()
+    df_top = df.groupby(["seccion", "sector"])["personas"].sum().reset_index()
+    df_top = df_top.loc[df_top.groupby("seccion")["personas"].idxmax()].copy()
+
+    gdf = raw_geojson_2024.copy()
+    # GeoJSON: "20240101_38001_D01_S001" → "38001_D01_S001"
+    gdf["_k"] = gdf["geocode"].astype(str).str.split("_", n=1).str[1]
+
+    logger.info(f"GeoJSON _k ejemplo: '{gdf['_k'].iloc[0]}'")
+    logger.info(f"df_top seccion ejemplo: '{df_top['seccion'].iloc[0]}'")
+
+    merged = gdf.merge(df_top, left_on="_k", right_on="seccion", how="left")
+    n_ok = int(merged["sector"].notna().sum())
+    logger.info(f"Secciones con sector: {n_ok}/{len(merged)}")
+
+    return Output(merged, metadata={
+        "con_sector": n_ok,
+        "total": len(merged),
+        "pct_join": round(n_ok / len(merged) * 100, 1)
+    })
+
+@asset(group_name="viz_data")
+def viz_renta_vs_ocupacion(cleaned_renta_media, cleaned_ocupacion):
+    """Relación entre renta media y % ocupados por sección y año."""
+    renta = cleaned_renta_media[["seccion", "anio", "renta_media"]]
+    ocup  = (cleaned_ocupacion
+             .groupby(["seccion", "anio"])["personas"].sum()
+             .reset_index()
+             .rename(columns={"personas": "total_ocupados"}))
+    df = renta.merge(ocup, on=["seccion", "anio"], how="inner")
+    return Output(df, metadata={"rows": len(df)})
+
+@asset(group_name="viz_data")
+def viz_relacion_actividad(cleaned_relacion_actividad):
+    """Distribución porcentual Ocupado/Parado/Inactivo por año."""
+    df = cleaned_relacion_actividad.groupby(["anio", "relacion_actividad"])["personas"].sum().reset_index()
+    total = df.groupby("anio")["personas"].transform("sum")
+    df["porcentaje"] = (df["personas"] / total * 100).round(2)
+    return Output(df, metadata={"categorias": list(df["relacion_actividad"].unique())})
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -580,11 +688,39 @@ def codigo_generado_ocupacion(template_ia_ocupacion):
 # 6. RENDERIZADO DE VISUALIZACIONES
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _postprocesar_codigo(codigo: str) -> str:
+    """Corrige patrones frecuentes que genera el LLM incorrectamente."""
+    import re
+    # theme_minimal(figure_size=(...)) → theme_minimal() + theme(figure_size=(...))
+    codigo = re.sub(
+        r"theme_minimal\(\s*figure_size\s*=\s*(\([^)]+\))\s*\)",
+        r"theme_minimal() + theme(figure_size=\1)",
+        codigo
+    )
+    # theme_minimal(figure_size=x, ...) → separar
+    codigo = re.sub(
+        r"([\+\s])theme_minimal\(([^)]+)\)",
+        lambda m: m.group(1) + "theme_minimal() + theme(" + m.group(2) + ")",
+        codigo
+    )
+    return codigo
+
+
 def _ejecutar_codigo_ia(codigo: str, df):
     import plotnine
     import pandas as _pd
+    import re as _re
+    import ast
+
+    # Eliminar imports con o sin indentación
+    codigo = _re.sub(r"[ \t]*from\s+\S+\s+import\s+\*[^\n]*\n?", "", codigo)
+    codigo = _re.sub(r"[ \t]*import\s+\S+[^\n]*\n?",             "", codigo)
+
+    codigo = _postprocesar_codigo(codigo)
+    ast.parse(codigo)
 
     entorno = {}
+    entorno["plotnine"] = plotnine
     entorno.update({k: v for k, v in plotnine.__dict__.items() if not k.startswith("_")})
     entorno["pd"] = _pd
     entorno["df"] = df
@@ -593,126 +729,163 @@ def _ejecutar_codigo_ia(codigo: str, df):
     return entorno["generarplot"](df)
 
 
-def _subir_github(ruta: str):
+@asset(
+    group_name="publicacion",
+    deps=["grafico_tendencia_renta", "grafico_distribucion_ingresos",
+          "grafico_actividad", "grafico_ocupacion",
+          "mapa_renta_2021", "mapa_renta_2022", "mapa_renta_2023"]
+)
+def publicar_gh_pages(context):
+    """Publica los PNGs generados en gh-pages automáticamente."""
+    import shutil, subprocess
+    from pathlib import Path
+
+    repo_dir  = BASE_DIR
+    docs_dir  = repo_dir / "docs"
+    docs_dir.mkdir(exist_ok=True)
+
+    # Copiar todos los PNGs a docs/
+    for png in (repo_dir / "output").glob("*.png"):
+        shutil.copy(png, docs_dir / png.name)
+        context.log.info(f"Copiado: {png.name}")
+
+    # Generar index.html
+    graficos = sorted(docs_dir.glob("*.png"))
+    items_html = "\n".join(
+        f'  <figure>\n    <img src="{p.name}" style="max-width:900px;width:100%">\n'
+        f'    <figcaption>{p.stem.replace("_", " ").title()}</figcaption>\n  </figure>'
+        for p in graficos
+    )
+    html = f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Secciones Censales – S/C de Tenerife 2021-2023</title>
+  <style>
+    body {{ font-family: sans-serif; max-width: 960px; margin: auto; padding: 2em; }}
+    figure {{ margin: 2em 0; }}
+    figcaption {{ color: #555; font-size: 0.9em; margin-top: 0.5em; }}
+  </style>
+</head>
+<body>
+  <h1>Visualizaciones – Secciones Censales S/C de Tenerife</h1>
+  <p>Pipeline DataOps con Dagster · Gramática de Gráficos con Plotnine · IA Generativa</p>
+{items_html}
+</body>
+</html>"""
+
+    (docs_dir / "index.html").write_text(html, encoding="utf-8")
+
+    # Commit y push a main (GitHub Pages sirve desde /docs en main)
     try:
-        subprocess.run(["git", "add", ruta], check=True)
-        subprocess.run(["git", "commit", "-m", f"Auto: {Path(ruta).name}"], check=True)
+        subprocess.run(["git", "add", "docs/"], cwd=repo_dir, check=True)
+        result = subprocess.run(
+            ["git", "diff", "--cached", "--quiet"], cwd=repo_dir, capture_output=True
+        )
+        if result.returncode != 0:
+            subprocess.run(
+                ["git", "commit", "-m", "Auto: actualizar gh-pages docs/"],
+                cwd=repo_dir, check=True
+            )
+            subprocess.run(["git", "push"], cwd=repo_dir, check=True)
+            context.log.info("gh-pages actualizado correctamente")
+        else:
+            context.log.info("gh-pages sin cambios, nada que publicar")
+    except subprocess.CalledProcessError as e:
+        context.log.warning(f"Push gh-pages falló: {e}")
+
+    return Output(str(docs_dir), metadata={"archivos_publicados": len(graficos)})
+
+def _subir_github(ruta_archivo: str):
+    import subprocess
+    from pathlib import Path
+    logger = get_dagster_logger()
+    try:
+        subprocess.run(["git", "add", ruta_archivo], check=True)
+        # Verificar si hay algo que commitear antes de intentarlo
+        result = subprocess.run(
+            ["git", "diff", "--cached", "--quiet"],
+            capture_output=True
+        )
+        if result.returncode == 0:
+            logger.info(f"Sin cambios en {Path(ruta_archivo).name}, nada que commitear")
+            return
+        subprocess.run(["git", "commit", "-m", f"Auto: {Path(ruta_archivo).name}"], check=True)
         subprocess.run(["git", "push"], check=True)
     except subprocess.CalledProcessError as e:
-        get_dagster_logger().warning(f"Git push falló: {e}")
+        logger.warning(f"Git push falló: {e}")
 
 
 def _fallback_tendencia(df, ruta):
-    from plotnine import (
-        ggplot, aes, geom_ribbon, geom_line, geom_point,
-        scale_x_continuous, labs, theme_minimal, theme
-    )
-
+    import plotnine as p9
     g = (
-        ggplot(df, aes("anio", "media_provincial"))
-        + geom_ribbon(
-            aes(ymin="media_provincial - desv_std", ymax="media_provincial + desv_std"),
-            fill="#0077b6",
-            alpha=0.2
+        p9.ggplot(df, p9.aes(x="anio", y="media_provincial"))
+        + p9.geom_ribbon(
+            p9.aes(ymin="media_provincial - desv_std",
+                   ymax="media_provincial + desv_std"),
+            fill="#0077b6", alpha=0.2
         )
-        + geom_line(color="#0077b6", size=1.2)
-        + geom_point(color="#0077b6", size=3)
-        + scale_x_continuous(breaks=[2021, 2022, 2023])
-        + labs(
+        + p9.geom_line(color="#0077b6", size=1.2)
+        + p9.geom_point(color="#0077b6", size=3)
+        + p9.scale_x_continuous(breaks=[2021, 2022, 2023])
+        + p9.labs(
             title="Evolución de la Renta Media en S/C de Tenerife (2021-2023)",
-            x="Año",
-            y="Renta media bruta (€)",
+            x="Año", y="Renta media bruta (€)",
             caption="Fuente: ISTAC E30325A_000009"
         )
-        + theme_minimal()
-        + theme(figure_size=(12, 6))
+        + p9.theme_minimal()
+        + p9.theme(figure_size=(12, 6))
     )
     g.save(ruta, width=12, height=6, dpi=150)
 
 
 def _fallback_ingresos(df, ruta):
-    from plotnine import (
-        ggplot, aes, geom_bar, facet_wrap,
-        scale_fill_brewer, labs, theme_minimal, theme, element_text
-    )
-
+    import plotnine as p9
     g = (
-        ggplot(df, aes("fuente", "porcentaje", fill="fuente"))
-        + geom_bar(stat="identity", position="dodge")
-        + facet_wrap("~anio")
-        + scale_fill_brewer(type="qual", palette="Set2")
-        + labs(
-            title="Distribución de Fuentes de Renta – Secciones S/C de Tenerife",
-            x="",
-            y="Porcentaje (%)",
-            caption="Fuente: ISTAC E30325A_000002"
-        )
-        + theme_minimal()
-        + theme(
-            figure_size=(14, 7),
-            axis_text_x=element_text(angle=45, ha="right")
-        )
+        p9.ggplot(df, p9.aes(x="fuente", y="porcentaje", fill="fuente"))
+        + p9.geom_bar(stat="identity", position="dodge")
+        + p9.facet_wrap("~anio")
+        + p9.scale_fill_brewer(type="qual", palette="Set2")
+        + p9.labs(title="Distribución Fuentes de Renta – S/C Tenerife",
+                  x="", y="Porcentaje (%)", caption="Fuente: ISTAC E30325A_000002")
+        + p9.theme_minimal()
+        + p9.theme(figure_size=(14, 7),
+                   axis_text_x=p9.element_text(angle=45, ha="right"))
     )
     g.save(ruta, width=14, height=7, dpi=150)
-
 
 def _fallback_actividad(df, ruta):
-    from plotnine import (
-        ggplot, aes, geom_bar, facet_wrap,
-        scale_fill_manual, labs, theme_minimal, theme, element_text
-    )
-
-    colores = {
-        "Ocupado": "#0077b6",
-        "Parado": "#e63946",
-        "Inactivo": "#457b9d",
-        "Otro": "#a8dadc"
-    }
-
+    import plotnine as p9
     g = (
-        ggplot(df, aes("relacion_actividad", "porcentaje", fill="relacion_actividad"))
-        + geom_bar(stat="identity")
-        + facet_wrap("~anio")
-        + scale_fill_manual(values=colores)
-        + labs(
-            title="Relación con la Actividad – Secciones S/C de Tenerife (2021-2023)",
-            x="",
-            y="Porcentaje (%)",
-            caption="Fuente: INE Tabla 66796"
-        )
-        + theme_minimal()
-        + theme(
-            figure_size=(14, 7),
-            axis_text_x=element_text(angle=30, ha="right")
-        )
+        p9.ggplot(df, p9.aes(x="relacion_actividad", y="porcentaje", fill="relacion_actividad"))
+        + p9.geom_bar(stat="identity")
+        + p9.facet_wrap("~anio")
+        + p9.scale_fill_brewer(type="qual", palette="Set3")
+        + p9.labs(title="Actividad Económica – S/C Tenerife 2021-2023",
+                  x="", y="Porcentaje (%)", caption="Fuente: INE/ISTAC")
+        + p9.theme_minimal()
+        + p9.theme(figure_size=(16, 8),
+                   axis_text_x=p9.element_text(angle=45, ha="right"),
+                   legend_position="none")
     )
-    g.save(ruta, width=14, height=7, dpi=150)
+    g.save(ruta, width=16, height=8, dpi=150)
 
 
 def _fallback_ocupacion(df, ruta):
-    from plotnine import (
-        ggplot, aes, geom_bar, facet_wrap,
-        scale_fill_brewer, labs, theme_minimal, theme, element_text
-    )
-
+    import plotnine as p9
     g = (
-        ggplot(df, aes("sector", "porcentaje", fill="sector"))
-        + geom_bar(stat="identity")
-        + facet_wrap("~anio")
-        + scale_fill_brewer(type="qual", palette="Paired")
-        + labs(
-            title="Sector de Ocupación – Secciones S/C de Tenerife (2021-2023)",
-            x="",
-            y="Porcentaje (%)",
-            caption="Fuente: INE Tabla 70125"
-        )
-        + theme_minimal()
-        + theme(
-            figure_size=(14, 7),
-            axis_text_x=element_text(angle=45, ha="right")
-        )
+        p9.ggplot(df, p9.aes(x="sector", y="porcentaje", fill="sector"))
+        + p9.geom_bar(stat="identity")
+        + p9.facet_wrap("~anio")
+        + p9.scale_fill_brewer(type="qual", palette="Paired")
+        + p9.labs(title="Sector de Ocupación – S/C Tenerife 2021-2023",
+                  x="", y="Porcentaje (%)", caption="Fuente: INE Tabla 70125")
+        + p9.theme_minimal()
+        + p9.theme(figure_size=(16, 8),
+                   axis_text_x=p9.element_text(angle=45, ha="right"),
+                   legend_position="none")
     )
-    g.save(ruta, width=14, height=7, dpi=150)
+    g.save(ruta, width=16, height=8, dpi=150)
 
 
 def _mapa_coropletico(gdf, anio_datos, anio_geojson, ruta):
@@ -807,6 +980,69 @@ def grafico_ocupacion(context, codigo_generado_ocupacion, viz_ocupacion_distribu
     _subir_github(ruta)
     return Output(ruta, metadata={"url": MetadataValue.url(ruta)})
 
+@asset(group_name="visualizaciones")
+def mapa_ocupacion_2023(context, viz_geo_ocupacion_2023):
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as mpatches
+    import numpy as np
+
+    ruta = str(OUT_DIR / "mapa_ocupacion_2023.png")
+
+    # Filtrar geometrías nulas o vacías ANTES de to_crs
+    gdf = viz_geo_ocupacion_2023.copy()
+    gdf = gdf[gdf.geometry.notna() & ~gdf.geometry.is_empty]
+    gdf = gdf.dropna(subset=["sector"])
+
+    # Reproyectar solo si hay geometrías válidas
+    if len(gdf) == 0:
+        context.log.warning("mapa_ocupacion_2023: sin geometrías válidas, saltando mapa")
+        # Crear PNG vacío para no romper el check
+        fig, ax = plt.subplots(figsize=(14, 10))
+        ax.text(0.5, 0.5, "Sin datos de ocupación por sección",
+                ha="center", va="center", fontsize=16, transform=ax.transAxes)
+        plt.savefig(ruta, dpi=150, bbox_inches="tight")
+        plt.close()
+        _subir_github(ruta)
+        return Output(ruta)
+
+    gdf = gdf.to_crs(epsg=3857)   # Web Mercator evita el bug del aspect ratio con epsg:4326
+
+    sectores     = sorted(gdf["sector"].unique())
+    sector_a_num = {s: i for i, s in enumerate(sectores)}
+    gdf["sector_n"] = gdf["sector"].map(sector_a_num)
+    cmap = plt.get_cmap("Set3", len(sectores))
+
+    fig, ax = plt.subplots(figsize=(14, 10))
+    ax.set_aspect("equal")   # forzar aspect ratio antes de gdf.plot
+
+    gdf.plot(
+        column="sector_n",
+        cmap=cmap,
+        vmin=0,
+        vmax=max(len(sectores) - 1, 1),
+        linewidth=0.3,
+        edgecolor="white",
+        ax=ax,
+        aspect=None          # deshabilitar cálculo automático de aspect en geopandas
+    )
+
+    patches = [
+        mpatches.Patch(color=cmap(i / max(len(sectores) - 1, 1)), label=s)
+        for i, s in enumerate(sectores)
+    ]
+    ax.legend(handles=patches, loc="lower right", fontsize=7,
+              title="Sector", title_fontsize=8, framealpha=0.8)
+    ax.set_title("Sector de Ocupación Predominante por Sección – S/C de Tenerife 2023",
+                 fontsize=14, fontweight="bold", pad=12)
+    ax.set_axis_off()
+    ax.annotate("Fuente: INE Tabla 70125  |  GeoJSON: secciones_censales_tfe_2024",
+                xy=(0.01, 0.02), xycoords="axes fraction", fontsize=8, color="gray")
+    plt.tight_layout()
+    plt.savefig(ruta, dpi=150, bbox_inches="tight")
+    plt.close()
+
+    _subir_github(ruta)
+    return Output(ruta, metadata={"url": MetadataValue.url(ruta), "sectores": sectores})
 
 @asset(group_name="visualizaciones")
 def mapa_renta_2021(context, viz_geo_renta_2021):
