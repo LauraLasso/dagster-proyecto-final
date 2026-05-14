@@ -689,31 +689,13 @@ def codigo_generado_ocupacion(template_ia_ocupacion):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _postprocesar_codigo(codigo: str) -> str:
-    """Corrige patrones frecuentes que genera el LLM incorrectamente."""
-    import re
     # theme_minimal(figure_size=(...)) → theme_minimal() + theme(figure_size=(...))
     codigo = re.sub(
         r"theme_minimal\(\s*figure_size\s*=\s*(\([^)]+\))\s*\)",
         r"theme_minimal() + theme(figure_size=\1)",
         codigo
     )
-    # theme_minimal(figure_size=x, ...) → separar
-    codigo = re.sub(
-        r"([\+\s])theme_minimal\(([^)]+)\)",
-        lambda m: m.group(1) + "theme_minimal() + theme(" + m.group(2) + ")",
-        codigo
-    )
-    return codigo
-
-
-def _postprocesar_codigo(codigo: str) -> str:
-    # theme_minimal(figure_size=...) → theme_minimal() + theme(figure_size=...)
-    codigo = re.sub(
-        r"theme_minimal\(\s*figure_size\s*=\s*(\([^)]+\))\s*\)",
-        r"theme_minimal() + theme(figure_size=\1)",
-        codigo
-    )
-    # theme_minimal(cualquier_arg) → theme_minimal() + theme(cualquier_arg)
+    # theme_minimal(cualquier_otro_arg) → theme_minimal() + theme(cualquier_otro_arg)
     def _fix_theme(m):
         interior = m.group(2).strip()
         if interior:
@@ -722,20 +704,23 @@ def _postprocesar_codigo(codigo: str) -> str:
     codigo = re.sub(r"([\+\s])theme_minimal\(([^)]+)\)", _fix_theme, codigo)
     return codigo
 
-
 def _ejecutar_codigo_ia(codigo: str, df):
     import plotnine
     import pandas as _pd
     import ast
 
-    # Eliminar imports con o sin indentación (incluidos dentro de funciones)
-    codigo = re.sub(r"[ \t]*from\s+\S+\s+import\s+[^\n]*\n?", "", codigo)
-    codigo = re.sub(r"[ \t]*import\s+\S+[^\n]*\n?",           "", codigo)
+    # Eliminar imports en cualquier posición (dentro o fuera de funciones)
+    codigo = re.sub(r"^[ \t]*from\s+\S+\s+import\s+[^\n]+\n?", "", codigo, flags=re.MULTILINE)
+    codigo = re.sub(r"^[ \t]*import\s+\S+[^\n]*\n?",           "", codigo, flags=re.MULTILINE)
 
     codigo = _postprocesar_codigo(codigo)
 
-    # Validar sintaxis antes de exec
-    ast.parse(codigo)
+    # Quedarse solo desde 'def generarplot' por si hay texto basura antes
+    lineas = codigo.split("\n")
+    inicio = next((i for i, l in enumerate(lineas) if l.strip().startswith("def generarplot")), 0)
+    codigo = "\n".join(lineas[inicio:])
+
+    ast.parse(codigo)  # valida sintaxis
 
     entorno = {}
     entorno["plotnine"] = plotnine
@@ -745,7 +730,6 @@ def _ejecutar_codigo_ia(codigo: str, df):
 
     exec(codigo, entorno)  # noqa: S102
     return entorno["generarplot"](df)
-
 
 @asset(
     group_name="publicacion",
@@ -836,6 +820,9 @@ def _subir_github(ruta_archivo: str):
 
 def _fallback_tendencia(df, ruta):
     import plotnine as p9
+    df = df.copy()
+    # Normalizar nombre de columna año → anio por si acaso
+    df.columns = [c.replace("año", "anio").replace("Año", "anio") for c in df.columns]
     g = (
         p9.ggplot(df, p9.aes(x="anio", y="media_provincial"))
         + p9.geom_ribbon(
