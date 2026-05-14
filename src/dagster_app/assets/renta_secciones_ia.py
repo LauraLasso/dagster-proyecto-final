@@ -706,17 +706,35 @@ def _postprocesar_codigo(codigo: str) -> str:
     return codigo
 
 
+def _postprocesar_codigo(codigo: str) -> str:
+    # theme_minimal(figure_size=...) → theme_minimal() + theme(figure_size=...)
+    codigo = re.sub(
+        r"theme_minimal\(\s*figure_size\s*=\s*(\([^)]+\))\s*\)",
+        r"theme_minimal() + theme(figure_size=\1)",
+        codigo
+    )
+    # theme_minimal(cualquier_arg) → theme_minimal() + theme(cualquier_arg)
+    def _fix_theme(m):
+        interior = m.group(2).strip()
+        if interior:
+            return m.group(1) + "theme_minimal() + theme(" + interior + ")"
+        return m.group(0)
+    codigo = re.sub(r"([\+\s])theme_minimal\(([^)]+)\)", _fix_theme, codigo)
+    return codigo
+
+
 def _ejecutar_codigo_ia(codigo: str, df):
     import plotnine
     import pandas as _pd
-    import re as _re
     import ast
 
-    # Eliminar imports con o sin indentación
-    codigo = _re.sub(r"[ \t]*from\s+\S+\s+import\s+\*[^\n]*\n?", "", codigo)
-    codigo = _re.sub(r"[ \t]*import\s+\S+[^\n]*\n?",             "", codigo)
+    # Eliminar imports con o sin indentación (incluidos dentro de funciones)
+    codigo = re.sub(r"[ \t]*from\s+\S+\s+import\s+[^\n]*\n?", "", codigo)
+    codigo = re.sub(r"[ \t]*import\s+\S+[^\n]*\n?",           "", codigo)
 
     codigo = _postprocesar_codigo(codigo)
+
+    # Validar sintaxis antes de exec
     ast.parse(codigo)
 
     entorno = {}
