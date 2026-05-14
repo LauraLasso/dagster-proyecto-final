@@ -591,10 +591,12 @@ def template_ia_distribucion_ingresos(viz_distribucion_ingresos):
 @asset(group_name="ia_templates")
 def template_ia_actividad(viz_actividad_distribucion):
     columnas = ", ".join(viz_actividad_distribucion.columns)
-    cats     = list(viz_actividad_distribucion["relacion_actividad"].unique())
+    cats = list(viz_actividad_distribucion["relacion_actividad"].unique())
+    # Cambiar esta línea:
+    cats_str = ", ".join(str(c) for c in cats)
     descripcion = f"""
 - Dataset: viz_actividad_distribucion con columnas: {columnas}
-- Categorías: {cats}
+- Categorías: {cats_str}
 - Estéticas (aes): relacion_actividad → eje X, porcentaje → eje Y,
              fill=relacion_actividad, facet por anio.
 - Geometría: geom_bar(stat="identity")
@@ -615,9 +617,10 @@ def template_ia_actividad(viz_actividad_distribucion):
 def template_ia_ocupacion(viz_ocupacion_distribucion):
     columnas = ", ".join(viz_ocupacion_distribucion.columns)
     sectores = list(viz_ocupacion_distribucion["sector"].unique())
+    sectores_str = ", ".join(str(s) for s in sectores)
     descripcion = f"""
 - Dataset: viz_ocupacion_distribucion con columnas: {columnas}
-- Sectores disponibles: {sectores}
+- Sectores disponibles: {sectores_str}
 - Estéticas (aes): sector → eje X, porcentaje → eje Y, fill=sector, facet por anio.
 - Geometría: geom_bar(stat="identity")
 - Escalas: scale_fill_brewer(type="qual", palette="Paired")
@@ -712,6 +715,7 @@ def _ejecutar_codigo_ia(codigo: str, df):
     # Eliminar imports en cualquier posición (dentro o fuera de funciones)
     codigo = re.sub(r"^[ \t]*from\s+\S+\s+import\s+[^\n]+\n?", "", codigo, flags=re.MULTILINE)
     codigo = re.sub(r"^[ \t]*import\s+\S+[^\n]*\n?",           "", codigo, flags=re.MULTILINE)
+    codigo = re.sub(r"^[ \t]*from\s+plotnine\s+import\s+\*[^\n]*\n?", "", codigo, flags=re.MULTILINE)
 
     codigo = _postprocesar_codigo(codigo)
 
@@ -821,18 +825,13 @@ def _subir_github(ruta_archivo: str):
 def _fallback_tendencia(df, ruta):
     import plotnine as p9
     df = df.copy()
-    # Normalizar nombre de columna año → anio por si acaso
     df.columns = [c.replace("año", "anio").replace("Año", "anio") for c in df.columns]
+    # Forzar anio como factor para evitar problemas de escala continua
+    df["anio"] = df["anio"].astype(str)
     g = (
         p9.ggplot(df, p9.aes(x="anio", y="media_provincial"))
-        + p9.geom_ribbon(
-            p9.aes(ymin="media_provincial - desv_std",
-                   ymax="media_provincial + desv_std"),
-            fill="#0077b6", alpha=0.2
-        )
-        + p9.geom_line(color="#0077b6", size=1.2)
+        + p9.geom_line(p9.aes(group=1), color="#0077b6", size=1.2)
         + p9.geom_point(color="#0077b6", size=3)
-        + p9.scale_x_continuous(breaks=[2021, 2022, 2023])
         + p9.labs(
             title="Evolución de la Renta Media en S/C de Tenerife (2021-2023)",
             x="Año", y="Renta media bruta (€)",
