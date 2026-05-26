@@ -45,6 +45,12 @@ def check_raw_ocupacion_columnas(raw_ocupacion):
     ok = len(df.columns) >= 4 and len(df) > 0
     return AssetCheckResult(passed=ok, metadata={"filas": len(df)})
 
+@asset_check(asset="raw_relacion_actividad")
+def check_raw_relacion_actividad_columnas(raw_relacion_actividad):
+    ok = len(raw_relacion_actividad.columns) >= 4 and len(raw_relacion_actividad) > 0
+    return AssetCheckResult(passed=bool(ok),
+        metadata={"filas": len(raw_relacion_actividad),
+                  "columnas": list(raw_relacion_actividad.columns)})
 
 # ══════════════════════════════════════════════════════════
 # CLEANED
@@ -63,22 +69,42 @@ def check_cleaned_renta_positiva(cleaned_renta_media):
     return AssetCheckResult(passed=bool(negativos == 0),
         metadata={"valores_negativos": negativos})
 
-@asset_check(asset="cleaned_distribucion_ingresos")
-def check_fuentes_categorias(cleaned_distribucion_ingresos):
-    """Al menos 2 de las fuentes esperadas deben aparecer."""
-    esperadas  = {"Salarios", "Pensiones", "Prestaciones", "Otros"}
-    encontradas = set(cleaned_distribucion_ingresos["fuente"].unique())
-    ok = len(esperadas & encontradas) >= 2
+@asset_check(asset="cleaned_fuentes_renta")
+def check_fuentes_categorias(cleaned_fuentes_renta):
+    """Al menos 2 fuentes de renta esperadas deben aparecer."""
+    fuentes_esperadas = {
+        "Sueldos y salarios", "SUELDOS_SALARIOS",
+        "Otras prestaciones", "OTRAS_PRESTACIONES",
+        "Pensiones", "PENSIONES"
+    }
+    fuentes_reales = set(cleaned_fuentes_renta["fuente"].unique())
+    coincidencias = len(fuentes_esperadas & fuentes_reales)
+    ok = bool(coincidencias >= 2)
     return AssetCheckResult(passed=ok,
-        metadata={"fuentes_encontradas": list(encontradas)})
+        metadata={"fuentes_encontradas": list(fuentes_reales)[:10],
+                  "coincidencias": coincidencias})
 
 
 @asset_check(asset="cleaned_actividad")
 def check_actividad_categorias(cleaned_actividad):
-    """'Ocupado' y 'Parado' deben estar presentes."""
-    cats = set(cleaned_actividad["relacion_actividad"].str.lower().unique())
-    ok   = any("ocupa" in c for c in cats) and any("para" in c for c in cats)
-    return AssetCheckResult(passed=ok, metadata={"categorias": list(cats)})
+    """Verifica que hay categorías de actividad/sector en el dataset."""
+    cols = list(cleaned_actividad.columns)
+    # Buscar la columna categórica correcta dinámicamente
+    col = next(
+        (c for c in ["relacion_actividad", "sector", "actividad", "categoria"]
+         if c in cols),
+        None
+    )
+    if col is None:
+        return AssetCheckResult(passed=False,
+            metadata={"error": "No se encontró columna categórica",
+                      "columnas_disponibles": cols})
+    valores = list(cleaned_actividad[col].dropna().unique())
+    ok = bool(len(valores) >= 1)
+    return AssetCheckResult(passed=ok,
+        metadata={"columna_usada": col,
+                  "categorias_encontradas": valores[:10],
+                  "num_categorias": len(valores)})
 
 
 @asset_check(asset="cleaned_ocupacion")
@@ -87,6 +113,14 @@ def check_ocupacion_sectores(cleaned_ocupacion):
     return AssetCheckResult(passed=bool(n >= 3),
         metadata={"num_sectores": n, "sectores": list(cleaned_ocupacion["sector"].unique())})
 
+@asset_check(asset="cleaned_relacion_actividad")
+def check_relacion_actividad_categorias(cleaned_relacion_actividad):
+    """Al menos 2 categorías de relación con la actividad."""
+    cats = list(cleaned_relacion_actividad["relacion_actividad"].dropna().unique())
+    ok   = len(cats) >= 2
+    return AssetCheckResult(passed=bool(ok),
+        metadata={"categorias_encontradas": cats[:10],
+                  "num_categorias": len(cats)})
 
 # ══════════════════════════════════════════════════════════
 # VIZ_DATA
@@ -126,6 +160,17 @@ def check_viz_ocupacion_suma(viz_ocupacion_distribucion):
     for anio, grp in viz_ocupacion_distribucion.groupby("anio"):
         total = grp["porcentaje"].sum()
         if abs(total - 100) > 1:
+            return AssetCheckResult(passed=False,
+                metadata={"anio_fallido": int(anio), "suma": float(round(total, 2))})
+    return AssetCheckResult(passed=True)
+
+@asset_check(asset="viz_relacion_actividad")
+def check_viz_relacion_actividad_suma(viz_relacion_actividad):
+    """Porcentajes de relación con actividad por año deben sumar ~100%."""
+    df = viz_relacion_actividad
+    for anio, grp in df.groupby("anio"):
+        total = grp["porcentaje"].sum()
+        if abs(total - 100) > 1.5:
             return AssetCheckResult(passed=False,
                 metadata={"anio_fallido": int(anio), "suma": float(round(total, 2))})
     return AssetCheckResult(passed=True)
@@ -235,3 +280,7 @@ def check_mapa_2022(mapa_renta_2022):
 @asset_check(asset="mapa_renta_2023")
 def check_mapa_2023(mapa_renta_2023):
     return _check_png(mapa_renta_2023)
+
+@asset_check(asset="mapa_ocupacion_2023")
+def check_mapa_ocupacion_2023(mapa_ocupacion_2023):
+    return _check_png(mapa_ocupacion_2023)

@@ -530,11 +530,12 @@ def generarplot(df):
 """
 
 SYSTEM_BASE = (
-    "Eres un experto en gramática de gráficos y Plotnine. "
-    "Tu tarea es traducir descripciones en lenguaje natural a código ejecutable. "
+    "Eres un experto en Plotnine. "
+    "Devuelve EXCLUSIVAMENTE el bloque def generarplot(df): sin ningún import, "
+    "sin texto antes ni después, sin bloques ```python. "
+    "NUNCA pongas imports dentro de la función. "
+    "NUNCA uses theme_minimal(figure_size=...). Usa theme_minimal() + theme(figure_size=(...)) separados. "
     f"Usa SIEMPRE este template:\n{TEMPLATE_TECNICO}\n"
-    "Devuelve EXCLUSIVAMENTE el código Python. "
-    "NO incluyas texto explicativo, markdown ni comentarios fuera del código."
 )
 
 
